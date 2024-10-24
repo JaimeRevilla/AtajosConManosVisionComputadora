@@ -1,0 +1,101 @@
+import cv2
+import numpy as np
+
+class HandGestureRecognition:
+    def __init__(self, lower_skin, upper_skin):
+        self.lower_skin = lower_skin
+        self.upper_skin = upper_skin
+        self.cap = cv2.VideoCapture(0)
+
+    def capture_frame(self):
+        ret, frame = self.cap.read()
+        return ret, frame
+
+    def convert_to_hsv(self, frame):
+        return cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+
+    def apply_skin_mask(self, hsv_frame):
+        mask = cv2.inRange(hsv_frame, self.lower_skin, self.upper_skin)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+        return mask
+
+    def find_contours(self, mask):
+        contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        if contours:
+            return max(contours, key=lambda x: cv2.contourArea(x))
+        return None
+
+    def detect_fingers(self, contour):
+        if contour is not None and len(contour) > 3:
+            hull = cv2.convexHull(contour, returnPoints=False)
+
+            if hull is not None and len(hull) > 3:
+                defects = cv2.convexityDefects(contour, hull)
+                if defects is None:
+                    return 0
+                
+                finger_count = 0
+                for i in range(defects.shape[0]):
+                    s, e, f, d = defects[i, 0]
+                    start = tuple(contour[s][0])
+                    end = tuple(contour[e][0])
+                    far = tuple(contour[f][0])
+
+                    a = np.linalg.norm(np.array(start) - np.array(end))
+                    b = np.linalg.norm(np.array(start) - np.array(far))
+                    c = np.linalg.norm(np.array(end) - np.array(far))
+
+                    angle = np.arccos((b ** 2 + c ** 2 - a ** 2) / (2 * b * c))
+
+                    if angle <= np.pi / 2 and d > 10000:
+                        finger_count += 1
+
+                return finger_count
+        return 0
+
+    def draw_contour(self, frame, contour):
+        if contour is not None:
+            cv2.drawContours(frame, [contour], -1, (0, 255, 0), 2)
+
+    def show_frame(self, window_name, frame):
+        cv2.imshow(window_name, frame)
+
+    def release(self):
+        self.cap.release()
+        cv2.destroyAllWindows()
+
+class MainApplication:
+    def __init__(self):
+        self.lower_skin = np.array([0, 20, 70], dtype=np.uint8)
+        self.upper_skin = np.array([20, 255, 255], dtype=np.uint8)
+        self.recognition = HandGestureRecognition(self.lower_skin, self.upper_skin)
+
+    def run(self):
+        while True:
+            ret, frame = self.recognition.capture_frame()
+            if not ret:
+                break
+
+            hsv_frame = self.recognition.convert_to_hsv(frame)
+            skin_mask = self.recognition.apply_skin_mask(hsv_frame)
+            contour = self.recognition.find_contours(skin_mask)
+
+            if contour is not None and cv2.contourArea(contour) > 1000:
+                self.recognition.draw_contour(frame, contour)
+                finger_count = self.recognition.detect_fingers(contour)
+                
+                cv2.putText(frame, f'Fingers: {finger_count}', (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+                
+                if finger_count == 2:
+                    print("Dos dedos levantados")
+
+            self.recognition.show_frame('Hand Gesture Recognition', frame)
+
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
+        self.recognition.release()
+
+if __name__ == "__main__":
+    app = MainApplication()
+    app.run()
