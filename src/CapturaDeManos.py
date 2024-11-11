@@ -1,59 +1,92 @@
 import cv2
 import mediapipe as mp
 import numpy as np
+import Acciones
+import time
 
-# Inicializar MediaPipe para la detección de manos
+# Inicializar MediaPipe
 mp_hands = mp.solutions.hands
+hands = mp_hands.Hands(static_image_mode=False,
+                       max_num_hands=1,
+                       min_detection_confidence=0.7)
 
-# Capturar la cámara
+# Captura de video
 cap = cv2.VideoCapture(0)
-bg = None
 
-# COLORES PARA VISUALIZACIÓN
-color_contorno = (0,255,0)
+# Variables de tiempo
+tiempo_espera = 3  # Tiempo para esperar y detectar gesto (en segundos)
+tiempo_descanso = 10  # Tiempo de descanso después de ejecutar un comando (en segundos)
+ultimo_tiempo = 0
+en_descanso = False
 
-# Configuraciones de MediaPipe
-with mp_hands.Hands(static_image_mode=False, max_num_hands=1, min_detection_confidence=0.7) as hands:
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            print("Error al leer el frame de la cámara.")
-            break
+def detectar_gesto(contorno):
+    """
+    Detecta el gesto basándose en el contorno de la mano.
+    """
+    area_contorno = cv2.contourArea(contorno)
+    hull = cv2.convexHull(contorno)
+    area_hull = cv2.contourArea(hull)
 
-        # Convertir la imagen a RGB (MediaPipe trabaja en RGB)
+    solidity = area_contorno / area_hull
+
+    if solidity > 0.9:
+        return "puño"
+    elif solidity > 0.5:
+        return "okey"
+    else:
+        return "mano_abierta"
+
+def detectar_y_ejecutar():
+    """
+    Función para detectar el gesto y ejecutar el comando.
+    """
+    global ultimo_tiempo, en_descanso
+
+    if time.time() - ultimo_tiempo >= tiempo_espera:
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        
-        # Procesar la imagen para detectar manos
         result = hands.process(rgb_frame)
-        
-        # Si se detecta una mano
+
         if result.multi_hand_landmarks:
             for hand_landmarks in result.multi_hand_landmarks:
-                # Extraer los puntos clave para crear el contorno
-                h, w, c = frame.shape
-                hand_points = np.array([[int(landmark.x * w), int(landmark.y * h)] for landmark in hand_landmarks.landmark])
-                
-                # Crear una máscara binaria de la mano
-                mask = np.zeros((h, w), dtype=np.uint8)
-                cv2.fillPoly(mask, [hand_points], 255)
-                
-                # Encontrar contornos de la mano en la máscara binaria
-                cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                
-                # Dibujar el contorno de la mano en la imagen original
-                if cnts:
-                    cv2.drawContours(frame, cnts, -1, color_contorno, 2)
-                
-                # Mostrar la imagen binaria de la mano
-                cv2.imshow('Mascara de Mano', mask)
-        
-        # Mostrar la imagen original con el contorno dibujado
-        cv2.imshow('Detección de Contorno con MediaPipe', frame)
+                points = []
+                for landmark in hand_landmarks.landmark:
+                    x = int(landmark.x * frame.shape[1])
+                    y = int(landmark.y * frame.shape[0])
+                    points.append([x, y])
+                points = np.array(points, dtype=np.int32)
 
-        # Salir con la tecla 'q'
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+                # Crear contorno y detectar gesto
+                hull = cv2.convexHull(points)
+                gesto_detectado = detectar_gesto(hull)
 
-# Liberar la cámara y cerrar ventanas
+                if gesto_detectado:
+                    print(f"Gesto detectado: {gesto_detectado}")
+                    Acciones.ejecutar_comando(gesto_detectado)
+                    ultimo_tiempo = time.time()
+                    en_descanso = True
+                    return
+
+while cap.isOpened():
+    ret, frame = cap.read()
+    if not ret:
+        break
+
+    # Si estamos en descanso, esperamos hasta que pase el tiempo de descanso
+    if en_descanso:
+        if time.time() - ultimo_tiempo >= tiempo_descanso:
+            en_descanso = False
+        continue
+
+    # Detectar gesto y ejecutar acción
+    detectar_y_ejecutar()
+
+    # Mostrar la imagen en pantalla
+    cv2.imshow("Detección de Gesto", frame)
+
+    # Presionar 'q' para salir
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+# Liberar recursos
 cap.release()
 cv2.destroyAllWindows()
