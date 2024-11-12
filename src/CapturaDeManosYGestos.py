@@ -4,13 +4,11 @@ import numpy as np
 import Acciones
 import time
 
-# Inicializar MediaPipe
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(static_image_mode=False,
                        max_num_hands=1,
                        min_detection_confidence=0.7)
 
-# Captura de video
 cap = cv2.VideoCapture(0)
 
 def detectar_gesto(contorno):
@@ -46,7 +44,6 @@ def detectar_y_ejecutar():
                 points.append([x, y])
             points = np.array(points, dtype=np.int32)
 
-            # Crear contorno y detectar gesto
             hull = cv2.convexHull(points)
             gesto_detectado = detectar_gesto(hull)
 
@@ -59,18 +56,14 @@ while cap.isOpened():
     if not ret:
         break
 
-    # Mostrar la imagen en pantalla
     cv2.imshow("Detección de Gesto", frame)
 
-    # Presionar 's' para detectar gesto
     if cv2.waitKey(1) & 0xFF == ord('s'):
         print("Detectando gesto...")
         detectar_y_ejecutar()
 
-    # Presionar 'q' para salir
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
-# Liberar recursos
 cap.release()
 cv2.destroyAllWindows()
