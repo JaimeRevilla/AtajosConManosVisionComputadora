@@ -33,5 +33,4 @@ def ejecutar_comando(gesto):
         print(f"Gesto '{gesto}' no reconocido.")
 
 if __name__ == "__main__":
-    # Prueba rápida
     ejecutar_comando("okey")
