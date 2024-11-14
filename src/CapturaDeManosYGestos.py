@@ -30,15 +30,12 @@ def mover_ratón(frame):
 
     if result.multi_hand_landmarks:
         for hand_landmarks in result.multi_hand_landmarks:
-            # Usar el landmark 8 (punta del dedo índice)
             x = int(hand_landmarks.landmark[8].x * frame.shape[1])
             y = int(hand_landmarks.landmark[8].y * frame.shape[0])
 
-            # Escalar las coordenadas a la pantalla
             screen_x = int(x * screen_width / frame.shape[1])
             screen_y = int(y * screen_height / frame.shape[0])
 
-            # Mover el ratón
             pyautogui.moveTo(screen_x, screen_y, duration=0.05)
             print(f"Moviendo el ratón a: ({screen_x}, {screen_y})")
 
@@ -63,42 +60,33 @@ while cap.isOpened():
         print("Error al capturar el video.")
         break
 
-    # Mostrar la imagen en pantalla
     cv2.imshow("Detección de Mano", frame)
 
-    # Capturar la tecla presionada
     key = cv2.waitKey(1) & 0xFF
 
-    # Control del cooldown para evitar acciones demasiado rápidas
     tiempo_actual = time.time()
 
-    # Presionar 's' para abrir el Bloc de notas
     if key == ord('s') and tiempo_actual - ultimo_tiempo_accion > cooldown:
         print("Tecla 's' presionada. Abriendo Bloc de notas...")
         abrir_bloc_de_notas()
         ultimo_tiempo_accion = tiempo_actual
 
-    # Presionar 'm' para activar/desactivar el modo de mover el ratón
     if key == ord('m') and tiempo_actual - ultimo_tiempo_accion > cooldown:
         modo_mover_ratón = not modo_mover_ratón
         estado = "activado" if modo_mover_ratón else "desactivado"
         print(f"Modo mover ratón {estado}")
         ultimo_tiempo_accion = tiempo_actual
 
-    # Mover el ratón si el modo está activado
     if modo_mover_ratón:
         mover_ratón(frame)
 
-    # Presionar 'd' para hacer clic
     if key == ord('d') and tiempo_actual - ultimo_tiempo_accion > cooldown:
         print("Tecla 'd' presionada. Realizando clic...")
         hacer_click()
         ultimo_tiempo_accion = tiempo_actual
 
-    # Presionar 'q' para salir
     if key == ord('q'):
         break
 
-# Liberar recursos
 cap.release()
 cv2.destroyAllWindows()
