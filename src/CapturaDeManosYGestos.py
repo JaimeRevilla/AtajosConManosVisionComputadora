@@ -4,22 +4,18 @@ import numpy as np
 import pyautogui
 import time
 
-# Inicializar MediaPipe
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(static_image_mode=False,
                        max_num_hands=1,
                        min_detection_confidence=0.7)
 
-# Captura de video
 cap = cv2.VideoCapture(0)
 
-# Obtener tamaño de pantalla
 screen_width, screen_height = pyautogui.size()
 
-# Inicializar variables de estado
 modo_mover_ratón = False
 ultimo_tiempo_accion = time.time()
-cooldown = 0.5  # Tiempo de espera entre acciones en segundos
+cooldown = 0.5  
 
 def mover_ratón(frame):
     """
