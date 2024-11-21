@@ -8,7 +8,20 @@ from sklearn.metrics import classification_report, accuracy_score
 import numpy as np
 import joblib
 
-df = pd.read_csv("dataset_index.csv")
+df = pd.read_csv("dataset_imagenes_absolutas.csv")
+
+import os
+
+missing_files = []
+for index, row in df.iterrows():
+    if not os.path.exists(row['filepath']):
+        missing_files.append(row['filepath'])
+
+if missing_files:
+    print(f"Imágenes faltantes o rutas inválidas: {missing_files}")
+else:
+    print("Todas las rutas son válidas.")
+
 
 features = []
 labels = []
