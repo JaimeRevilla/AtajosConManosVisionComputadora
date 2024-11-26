@@ -1,88 +1,77 @@
 import cv2
 import numpy as np
 
-def detect_hand():
-    # Iniciar captura de video
-    cap = cv2.VideoCapture(0)
+def detectar_dedos(frame):
+    # Convertir a escala de grises
+    gris = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     
-    if not cap.isOpened():
-        print("No se pudo acceder a la cámara.")
-        return
-
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            print("Error al capturar la imagen.")
-            break
-
-        # Dimensiones de la imagen
-        h, w, _ = frame.shape
+    # Aplicar un umbral binario inverso (fondo blanco -> 255, mano -> 0)
+    _, binaria = cv2.threshold(gris, 200, 255, cv2.THRESH_BINARY_INV)
+    
+    # Encontrar contornos
+    contornos, _ = cv2.findContours(binaria, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contornos:
+        return frame, 0  # No se detectó contorno
+    
+    # Seleccionar el contorno más grande (supuestamente la mano)
+    contorno_max = max(contornos, key=cv2.contourArea)
+    
+    # Calcular el hull convexo del contorno
+    hull = cv2.convexHull(contorno_max, returnPoints=False)
+    if hull is None:
+        return frame, 0  # Sin hull
+    
+    # Detectar defectos de convexidad
+    defectos = cv2.convexityDefects(contorno_max, hull)
+    if defectos is None:
+        return frame, 0  # Sin defectos
+    
+    # Filtrar defectos para contar dedos levantados
+    dedos_levantados = 0
+    for i in range(defectos.shape[0]):
+        inicio, fin, fondo, profundidad = defectos[i, 0]
+        punto_inicio = tuple(contorno_max[inicio][0])
+        punto_fin = tuple(contorno_max[fin][0])
+        punto_fondo = tuple(contorno_max[fondo][0])
         
-        # Definir área de interés (ROI)
-        roi = frame[h // 4:3 * h // 4, w // 4:3 * w // 4]
-        cv2.rectangle(frame, (w // 4, h // 4), (3 * w // 4, 3 * h // 4), (0, 255, 0), 2)
+        # Calcular distancias y ángulos para filtrar puntos irrelevantes
+        a = np.linalg.norm(np.array(punto_inicio) - np.array(punto_fin))
+        b = np.linalg.norm(np.array(punto_inicio) - np.array(punto_fondo))
+        c = np.linalg.norm(np.array(punto_fin) - np.array(punto_fondo))
+        angulo = np.arccos((b**2 + c**2 - a**2) / (2 * b * c))
+        
+        # Dedos levantados: defectos profundos y ángulo menor a 90 grados
+        if angulo < np.pi / 2 and profundidad > 20:  # Ajustar profundidad según escala
+            dedos_levantados += 1
+            cv2.circle(frame, punto_fondo, 5, (0, 255, 0), -1)
 
-        # Convertir a escala de grises
-        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        # Dibujar líneas de los dedos detectados
+        cv2.line(frame, punto_inicio, punto_fin, (255, 0, 0), 2)
+        cv2.line(frame, punto_inicio, punto_fondo, (0, 255, 0), 1)
+        cv2.line(frame, punto_fin, punto_fondo, (0, 255, 0), 1)
 
-        # Aplicar desenfoque para reducir ruido
-        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    # Visualizar el número de dedos detectados
+    cv2.putText(frame, f'Dedos levantados: {dedos_levantados}', (10, 30),
+                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+    
+    return frame, dedos_levantados
 
-        # Aplicar umbralización binaria
-        _, binary = cv2.threshold(blurred, 60, 255, cv2.THRESH_BINARY_INV)  # Inverso para resaltar la mano
 
-        # Detectar contornos
-        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+# Main
+cap = cv2.VideoCapture(0)  # Cambiar a un archivo si usas video pregrabado
 
-        if contours:
-            # Seleccionar el contorno más grande
-            max_contour = max(contours, key=cv2.contourArea)
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
+    
+    frame, dedos = detectar_dedos(frame)
+    
+    # Mostrar la imagen con detecciones
+    cv2.imshow('Detección de dedos', frame)
+    
+    if cv2.waitKey(1) & 0xFF == ord('q'):  # Presionar 'q' para salir
+        break
 
-            # Dibujar el contorno en la ROI
-            cv2.drawContours(roi, [max_contour], -1, (0, 255, 0), 2)
-
-            # Calcular el hull convexo
-            hull = cv2.convexHull(max_contour)
-            cv2.drawContours(roi, [hull], -1, (255, 0, 0), 2)
-
-            # Detectar defectos de convexidad
-            hull_indices = cv2.convexHull(max_contour, returnPoints=False)
-            if len(hull_indices) > 3:  # Evitar errores si hay pocos puntos
-                defects = cv2.convexityDefects(max_contour, hull_indices)
-
-                if defects is not None:
-                    count_defects = 0
-
-                    for i in range(defects.shape[0]):
-                        s, e, f, depth = defects[i, 0]
-                        start = tuple(max_contour[s][0])
-                        end = tuple(max_contour[e][0])
-                        far = tuple(max_contour[f][0])
-
-                        # Dibujar líneas y puntos de defectos convexos
-                        cv2.line(roi, start, end, (0, 255, 0), 2)
-                        cv2.circle(roi, far, 5, (0, 0, 255), -1)
-
-                        # Contar defectos profundos (dedos levantados)
-                        if depth > 1000:  # Ajustar este valor según el tamaño de la mano
-                            count_defects += 1
-
-                    # Mostrar número de dedos detectados
-                    cv2.putText(roi, f"Dedos: {count_defects + 1}", (10, 50), 
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-
-        # Mostrar las imágenes
-        cv2.imshow('Frame', frame)
-        cv2.imshow('ROI', roi)
-        cv2.imshow('Binary', binary)
-
-        # Salir al presionar ESC
-        if cv2.waitKey(1) & 0xFF == 27:
-            break
-
-    cap.release()
-    cv2.destroyAllWindows()
-
-# Ejecutar la función principal
-if __name__ == "__main__":
-    detect_hand()
+cap.release()
+cv2.destroyAllWindows()
