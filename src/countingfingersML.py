@@ -1,17 +1,23 @@
 import cv2
 import numpy as np
 import imutils
-from skimage.feature import hog
 import joblib
+from skimage.feature import hog
 
-# Cargar el modelo SVM entrenado
-modelo_svm = joblib.load('gesture_recognition_svm.pkl')
+# Cargar el modelo entrenado
+svm_model = joblib.load("gesture_recognition_svm.pkl")
 
-# Clases de gestos (ajusta según el modelo)
-clases = ['puño', 'mano_abierta', 'dedo_indice', 'OK', 'otros']
+# Configuración para HOG (debe coincidir con el entrenamiento)
+HOG_PARAMS = {
+    "orientations": 9,
+    "pixels_per_cell": (8, 8),
+    "cells_per_block": (2, 2),
+    "block_norm": "L2-Hys"
+}
 
+# Captura de video
 cap = cv2.VideoCapture(0)
-bg = None
+bg = None  # Fondo inicial para sustracción
 
 while True:
     ret, frame = cap.read()
@@ -19,52 +25,50 @@ while True:
         print("Error al leer el frame de la cámara.")
         break
 
-    # Redimensionar y voltear la imagen
     frame = imutils.resize(frame, width=640)
     frame = cv2.flip(frame, 1)
     frameAux = frame.copy()
 
     if bg is not None:
-        # Región de interés (ROI)
         ROI = frame[50:300, 380:600]
-        cv2.rectangle(frame, (380-2, 50-2), (600+2, 300+2), (0, 255, 0), 1)
+        cv2.rectangle(frame, (380-2, 50-2), (600+2, 300+2), (0, 255, 255), 1)
         grayROI = cv2.cvtColor(ROI, cv2.COLOR_BGR2GRAY)
-
-        # Fondo en la misma región
         bgROI = bg[50:300, 380:600]
 
-        # Calcular diferencia absoluta y aplicar umbral
+        # Diferencia con el fondo
         dif = cv2.absdiff(grayROI, bgROI)
-        _, mask = cv2.threshold(dif, 30, 255, cv2.THRESH_BINARY)
+        _, mask = cv2.threshold(dif, 40, 255, cv2.THRESH_BINARY)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
         mask = cv2.medianBlur(mask, 7)
 
-        # Preprocesar la máscara para el modelo
-        mask_resized = cv2.resize(mask, (64, 64))  # Redimensionar a 64x64
-        hog_features = hog(mask_resized, orientations=9, pixels_per_cell=(8, 8),
-                           cells_per_block=(2, 2), block_norm='L2-Hys')
+        # Encontrar contornos
+        cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if cnts:
+            cnt = max(cnts, key=cv2.contourArea)
+            cv2.drawContours(ROI, [cnt], 0, (255, 255, 0), 2)
 
-        # Hacer predicción
-        prediccion = modelo_svm.predict([hog_features])
-        clase_gesto = clases[int(prediccion[0])]
+            # Extraer ROI del contorno más grande
+            x, y, w, h = cv2.boundingRect(cnt)
+            handROI = grayROI[y:y+h, x:x+w]
 
-        # Mostrar resultado en la pantalla
-        cv2.putText(frame, f'Gesto: {clase_gesto}', (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+            # Preprocesar ROI para el modelo
+            handROI_resized = cv2.resize(handROI, (64, 64))
+            hog_features = hog(handROI_resized, **HOG_PARAMS).reshape(1, -1)
 
-        # Mostrar la máscara binaria
-        cv2.imshow('th', mask)
+            # Clasificar gesto
+            prediction = svm_model.predict(hog_features)[0]
+            cv2.putText(frame, f"Gesto: {prediction}", (10, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
-    else:
-        print("Fondo no detectado. Presiona 'i' para inicializar el fondo.")
+    cv2.imshow("Frame", frame)
 
-    # Mostrar la imagen original con el gesto detectado
-    cv2.imshow('Frame', frame)
-
-    k = cv2.waitKey(20)
-    if k == ord('i'):
+    # Captura del fondo (presionando 'b')
+    if cv2.waitKey(1) & 0xFF == ord('b'):
         bg = cv2.cvtColor(frameAux, cv2.COLOR_BGR2GRAY)
-        print("Fondo inicializado")
-    if k == 27:  # Presionar 'ESC' para salir
+        print("Fondo capturado")
+
+    # Salir (presionando 'q')
+    if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
 cap.release()

@@ -9,14 +9,13 @@ bg = None
 color_start = (204, 204, 0)
 color_end = (204, 0, 204)
 color_far = (255, 0, 0)
-
 color_fingers = (0, 255, 255)
 
 # Ajuste de parámetros
 umbral_diferencia = 40  # Ajusta este valor según la iluminación
 distancia_minima_dedos = 20  # Distancia mínima entre puntos de puntas de dedos (reducido)
 altura_minima = 20  # Altura mínima desde el centro de la palma para considerar un dedo (reducido)
-angulo_maximo = np.pi / 0.6  # Ángulo máximo permitido (aproximadamente 100°)
+angulo_maximo = np.pi / 2  # Ángulo máximo permitido (90°)
 kernel = np.ones((5, 5), np.uint8)  # Kernel para operaciones morfológicas
 
 while True:
@@ -47,16 +46,17 @@ while True:
 
         # Encontrar contornos
         cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        cnts = sorted(cnts, key=cv2.contourArea, reverse=True)[:1]
+        if cnts:
+            cnt = max(cnts, key=cv2.contourArea)
 
-        for cnt in cnts:
             # Dibujar el contorno más grande
             cv2.drawContours(ROI, [cnt], 0, (255, 255, 0), 2)
 
-            # Calcular el hull convexo del contorno
-            hull = cv2.convexHull(cnt, returnPoints=True)
-
+            # Calcular el hull convexo
+            hull = cv2.convexHull(cnt, returnPoints=False)
             if hull is not None and len(hull) > 3:
+                defects = cv2.convexityDefects(cnt, hull)
+
                 # Calcular centro de la palma
                 M = cv2.moments(cnt)
                 if M["m00"] == 0: M["m00"] = 1
@@ -64,35 +64,34 @@ while True:
                 cy = int(M["m01"] / M["m00"])
                 cv2.circle(ROI, (cx, cy), 5, (0, 255, 0), -1)
 
-                # Filtrar puntos convexos que sean puntas de dedos
                 dedos_levantados = 0
-                puntos_filtrados = []
-                for i, punto in enumerate(hull):
-                    x, y = punto[0]
+                if defects is not None:
+                    for i in range(defects.shape[0]):
+                        s, e, f, d = defects[i, 0]
+                        start = tuple(cnt[s][0])
+                        end = tuple(cnt[e][0])
+                        far = tuple(cnt[f][0])
 
-                    # Validar que el punto esté por encima de la palma y sea suficientemente alto
-                    if y < cy and (cy - y) > altura_minima:
-                        # Validar ángulo con respecto a puntos vecinos
-                        if i > 0 and i < len(hull) - 1:  # Evitar índices fuera de rango
-                            anterior = hull[i - 1][0]
-                            siguiente = hull[i + 1][0]
-                            vector1 = np.array([x - anterior[0], y - anterior[1]])
-                            vector2 = np.array([x - siguiente[0], y - siguiente[1]])
-                            angulo = np.arccos(np.dot(vector1, vector2) / (np.linalg.norm(vector1) * np.linalg.norm(vector2)))
+                        # Distancias desde el defecto al centro
+                        dist_centro = np.linalg.norm(np.array([far[0], far[1]]) - np.array([cx, cy]))
 
-                            # Mostrar ángulo para depuración
-                            print(f"Punto ({x},{y}) Ángulo: {np.degrees(angulo):.2f}°")
+                        # Validar que el punto es un dedo
+                        if dist_centro > altura_minima:
+                            # Ángulo entre los puntos del defecto
+                            a = np.linalg.norm(np.array(start) - np.array(far))
+                            b = np.linalg.norm(np.array(end) - np.array(far))
+                            c = np.linalg.norm(np.array(start) - np.array(end))
+                            angulo = np.arccos((a**2 + b**2 - c**2) / (2 * a * b))
 
-                            # Ángulo debe ser menor al máximo permitido
-                            if angulo < angulo_maximo:
-                                # Filtrar puntos cercanos
-                                if all(np.linalg.norm(np.array([x, y]) - np.array(p)) > distancia_minima_dedos for p in puntos_filtrados):
-                                    puntos_filtrados.append((x, y))
-                                    dedos_levantados += 1
-                                    cv2.circle(ROI, (x, y), 10, color_far, -1)
+                            # Validar ángulo y distancia
+                            if angulo < angulo_maximo and d > distancia_minima_dedos:
+                                dedos_levantados += 1
+                                cv2.circle(ROI, start, 5, color_start, -1)
+                                cv2.circle(ROI, end, 5, color_end, -1)
+                                cv2.circle(ROI, far, 5, color_far, -1)
 
                 # Mostrar el número de dedos levantados
-                cv2.putText(frame, f'Dedos: {dedos_levantados}', (10, 30),
+                cv2.putText(frame, f'Dedos: {dedos_levantados + 1}', (10, 30),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, color_fingers, 2)
 
         # Mostrar la máscara binaria
