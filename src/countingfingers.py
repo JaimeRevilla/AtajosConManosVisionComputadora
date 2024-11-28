@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import imutils
 
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(1)
 bg = None
 
 # COLORES PARA VISUALIZACIÓN
