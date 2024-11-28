@@ -8,7 +8,7 @@ from sklearn.metrics import classification_report, accuracy_score
 import numpy as np
 import joblib
 
-df = pd.read_csv("dataset_imagenes_absolutas.csv")
+df = pd.read_csv("dataset_imagenes.csv")
 
 import os
 
