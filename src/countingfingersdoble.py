@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import imutils
+import pyautogui  # Para controlar el ordenador
 
 cap = cv2.VideoCapture(1)
 bg = None
@@ -23,9 +24,9 @@ frame_interval = 60
 finger_history = []
 stable_fingers = None
 
-# Estado para la funcionalidad de "Hola Mundo"
+# Estado para funcionalidades
+accion_pendiente = None  # Puede ser "abrir_navegador" o "doble_click"
 esperando_confirmacion = False
-esperando_cancelacion = False
 
 while True:
     ret, frame = cap.read()
@@ -106,20 +107,31 @@ while True:
         if finger_history.count(finger_history[0]) == len(finger_history):
             stable_fingers = finger_history[0]
 
-        # Funcionalidad: Detectar 8 dedos, confirmar o cancelar
-        if stable_fingers == 8 and not esperando_confirmacion:
-            print("Se han detectado 8 dedos, procedemos?")
-            esperando_confirmacion = True
+        # Lógica de gestos
+        if not esperando_confirmacion:
+            if stable_fingers == 8:
+                print("Se han detectado 8 dedos. Confirmar para abrir el navegador.")
+                accion_pendiente = "abrir_navegador"
+                esperando_confirmacion = True
+            elif stable_fingers == 5:
+                print("Se han detectado 5 dedos. Confirmar para realizar doble clic.")
+                accion_pendiente = "doble_click"
+                esperando_confirmacion = True
 
         elif esperando_confirmacion:
             if stable_fingers == 1:
-                print("Hola Mundo")
+                if accion_pendiente == "abrir_navegador":
+                    print("Abriendo navegador...")
+                    pyautogui.hotkey('ctrl', 'alt', 'j')  # Ejemplo: Abre terminal (Linux)
+                elif accion_pendiente == "doble_click":
+                    print("Realizando doble clic.")
+                    pyautogui.doubleClick()  # Realizar doble clic
                 esperando_confirmacion = False
-                esperando_cancelacion = False
+                accion_pendiente = None
             elif stable_fingers == 2:
-                print("Operación cancelada. Esperando nueva instrucción.")
+                print("Operación cancelada.")
                 esperando_confirmacion = False
-                esperando_cancelacion = True
+                accion_pendiente = None
 
         # Mostrar máscara binaria
         cv2.imshow('th', mask)
