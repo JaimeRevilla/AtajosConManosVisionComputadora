@@ -24,9 +24,34 @@ frame_interval = 60
 finger_history = []
 stable_fingers = None
 
-# Estado para funcionalidades
-accion_pendiente = None  # Puede ser "abrir_navegador" o "doble_click"
-esperando_confirmacion = False
+# Historial para estabilizar el gesto "perfecto"
+perfect_gesture_history = []
+stable_perfect_gesture = False
+
+# Función mejorada para detectar el gesto de "perfecto"
+def detectar_gesto_perfecto(contorno, defects, cx, cy, dedos_levantados):
+    # El gesto "perfecto" solo puede detectarse si hay 2 dedos levantados
+    if defects is None or dedos_levantados != 2:
+        return False
+    
+    for i in range(defects.shape[0]):
+        s, e, f, d = defects[i, 0]
+        start = tuple(contorno[s][0])
+        end = tuple(contorno[e][0])
+        far = tuple(contorno[f][0])
+
+        # Calcular distancias entre puntos
+        dist_start_far = np.linalg.norm(np.array(start) - np.array(far))
+        dist_end_far = np.linalg.norm(np.array(end) - np.array(far))
+        dist_start_end = np.linalg.norm(np.array(start) - np.array(end))
+
+        # Comprobar si forma un círculo
+        if dist_start_end < 50 and dist_start_far < 50 and dist_end_far < 50:
+            # Validar que el defecto está cerca del centro de la palma
+            dist_centro = np.linalg.norm(np.array(far) - np.array([cx, cy]))
+            if dist_centro < 100:  # Ajustar según el tamaño esperado de la mano
+                return True
+    return False
 
 while True:
     ret, frame = cap.read()
@@ -51,28 +76,38 @@ while True:
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
         mask = cv2.medianBlur(mask, 7)
 
-        # Encontrar contornos (RETR_EXTERNAL-> Contornos externos, CHAIN_APPROX_SIMPLE -> Reducir el num de puntos aproximandolos para la memoria)
+        # Encontrar contornos
         cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         dedos_totales = 0
 
+        # Variable para saber si el gesto "perfecto" se detecta en este frame
+        perfecto_detectado_en_frame = False
+
         for cnt in cnts:
-            if cv2.contourArea(cnt) < 1000:  # Filtrar ruido (descarta contornos pequeños < 1000 pixeles)
+            if cv2.contourArea(cnt) < 1000:  # Filtrar ruido
                 continue
 
-            # Dibujar el contorno valido dentro del ROI con fondo azul y borde 2 pixeles
+            # Dibujar el contorno
             cv2.drawContours(ROI, [cnt], 0, (255, 255, 0), 2)
 
             # Calcular el hull convexo y defectos
-            hull = cv2.convexHull(cnt, returnPoints=False) #Calculamos el casco convexo del contorno 
-            if hull is not None and len(hull) > 3: #Verificamos que el casco en correcto y tiene por lo menos 3 puntos 
-                defects = cv2.convexityDefects(cnt, hull) #detectamos huecos en el contorno
+            hull = cv2.convexHull(cnt, returnPoints=False)
+            if hull is not None and len(hull) > 3:
+                defects = cv2.convexityDefects(cnt, hull)
 
-                # Calcular centro de la palma A traves de detectar momentos -> Distribucion espacial 
+                # Calcular centro de la palma
                 M = cv2.moments(cnt)
-                if M["m00"] == 0: M["m00"] = 1 #m00 -> calcula el area, si es 0 se pone a 1 para evitar divisiones raras
-                cx = int(M["m10"] / M["m00"]) # Calculamos dimensiones del contorno m10 y m01 son momentos espaciales
+                if M["m00"] == 0: M["m00"] = 1
+                cx = int(M["m10"] / M["m00"])
                 cy = int(M["m01"] / M["m00"])
-                cv2.circle(ROI, (cx, cy), 5, (0, 255, 0), -1) #Dibujamos circulo verde para detectar el centroide de la palma
+                cv2.circle(ROI, (cx, cy), 5, (0, 255, 0), -1)
+
+                # Detectar el gesto de "perfecto"
+                if detectar_gesto_perfecto(cnt, defects, cx, cy, dedos_totales):
+                    perfecto_detectado_en_frame = True
+                    cv2.putText(frame, "Perfecto Detectado", (10, 70), cv2.FONT_HERSHEY_SIMPLEX,
+                                1, (0, 255, 0), 2, cv2.LINE_AA)
+
 
                 dedos_levantados = 0
                 if defects is not None:
@@ -98,42 +133,26 @@ while True:
 
                 dedos_totales += dedos_levantados + 1
 
-        # Actualizar historial de detecciones Arreglamos el problema de que nos detecta algo nada mas entra en el ROI
-        # Creamos un array en el que se guardan los dedos levantados durante 60 frames.
-        # Eliminamos los valores iniciales del array cuando llega a la capacidad de 60 datos para poder recoger mas datos
+        # Actualizar historial de detecciones
         finger_history.append(dedos_totales)
         if len(finger_history) > frame_interval:
             finger_history.pop(0)
-    
-        # Comprobamos la estabilidad cuando en el array los 60 valores son iguales
+
         if finger_history.count(finger_history[0]) == len(finger_history):
             stable_fingers = finger_history[0]
 
-        # Lógica de gestos
-        if not esperando_confirmacion:
-            if stable_fingers == 8:
-                print("Se han detectado 8 dedos. Confirmar para abrir el navegador.")
-                accion_pendiente = "abrir_navegador"
-                esperando_confirmacion = True
-            elif stable_fingers == 5:
-                print("Se han detectado 5 dedos. Confirmar para realizar doble clic.")
-                accion_pendiente = "doble_click"
-                esperando_confirmacion = True
+        # Actualizar historial del gesto "perfecto"
+        perfect_gesture_history.append(perfecto_detectado_en_frame)
+        if len(perfect_gesture_history) > frame_interval:
+            perfect_gesture_history.pop(0)
 
-        elif esperando_confirmacion:
-            if stable_fingers == 1:
-                if accion_pendiente == "abrir_navegador":
-                    print("Abriendo navegador...")
-                    pyautogui.hotkey('ctrl', 'alt', 'j')  # Ejemplo: Abre terminal (Linux)
-                elif accion_pendiente == "doble_click":
-                    print("Realizando doble clic.")
-                    pyautogui.doubleClick()  # Realizar doble clic
-                esperando_confirmacion = False
-                accion_pendiente = None
-            elif stable_fingers == 2:
-                print("Operación cancelada.")
-                esperando_confirmacion = False
-                accion_pendiente = None
+        # Verificar estabilidad del gesto "perfecto"
+        if perfect_gesture_history.count(True) == len(perfect_gesture_history):
+            stable_perfect_gesture = True
+            cv2.putText(frame, "Gesto: Perfecto Estable", (10, 110), cv2.FONT_HERSHEY_SIMPLEX,
+                        1, (0, 0, 255), 2, cv2.LINE_AA)
+        else:
+            stable_perfect_gesture = False
 
         # Mostrar máscara binaria
         cv2.imshow('th', mask)
