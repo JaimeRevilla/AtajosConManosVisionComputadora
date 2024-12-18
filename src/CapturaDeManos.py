@@ -1,53 +1,51 @@
 import cv2
 import mediapipe as mp
-import numpy as np
 
-mp_hands = mp.solutions.hands
-hands = mp_hands.Hands(static_image_mode=False,
-                       max_num_hands=1,
-                       min_detection_confidence=0.7)
+def main():
+    # Inicializamos MediaPipe Hands
+    mp_hands = mp.solutions.hands
+    hands = mp_hands.Hands(static_image_mode=False,
+                           max_num_hands=2,
+                           min_detection_confidence=0.5,
+                           min_tracking_confidence=0.5)
+    mp_drawing = mp.solutions.drawing_utils
 
-cap = cv2.VideoCapture(0)
+    # Abrimos la cámara
+    cap = cv2.VideoCapture(1)
 
-while cap.isOpened():
-    ret, frame = cap.read()
-    if not ret:
-        break
+    if not cap.isOpened():
+        print("Error al abrir la cámara")
+        return
 
-    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    result = hands.process(rgb_frame)
+    while True:
+        ret, frame = cap.read()
 
-    mask = np.zeros(frame.shape[:2], dtype=np.uint8)
+        if not ret:
+            print("No se pudo capturar el frame")
+            break
 
-    if result.multi_hand_landmarks:
-        for hand_landmarks in result.multi_hand_landmarks:
-            points = []
-            for landmark in hand_landmarks.landmark:
-                x = int(landmark.x * frame.shape[1])
-                y = int(landmark.y * frame.shape[0])
-                points.append([x, y])
-            points = np.array(points, dtype=np.int32)
+        # Convertimos la imagen al formato RGB requerido por MediaPipe
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-            cv2.fillPoly(mask, [points], 255)
+        # Procesamos la imagen para detectar manos
+        results = hands.process(rgb_frame)
 
-    blurred_mask = cv2.GaussianBlur(mask, (15, 15), 0)
+        # Dibujamos las manos detectadas en el frame original
+        if results.multi_hand_landmarks:
+            for hand_landmarks in results.multi_hand_landmarks:
+                mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
 
-    kernel = np.ones((10, 10), np.uint8)
-    refined_mask = cv2.dilate(blurred_mask, kernel, iterations=1)
-    refined_mask = cv2.erode(refined_mask, kernel, iterations=1)
+        # Mostramos el frame con las manos detectadas
+        cv2.imshow('Detección de Manos', frame)
 
-    contours, _ = cv2.findContours(refined_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        # Salir al presionar 'q'
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
 
-    for contour in contours:
-        cv2.drawContours(frame, [contour], -1, (0, 255, 0), 2)
+    # Liberamos los recursos
+    cap.release()
+    cv2.destroyAllWindows()
+    hands.close()
 
-    mask_display = cv2.cvtColor(refined_mask, cv2.COLOR_GRAY2BGR)
-    combined_display = np.hstack((frame, mask_display))
-
-    cv2.imshow("Contorno Definido de la Mano", combined_display)
-
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-
-cap.release()
-cv2.destroyAllWindows()
+if __name__ == "__main__":
+    main()
