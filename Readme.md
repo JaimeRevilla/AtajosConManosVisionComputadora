@@ -8,3 +8,4 @@ Nuestro proyecto consiste en el desarrollo de un sistema de reconocimiento de ge
 
 - pip install opencv-python mediapipe
 - pip install pyautogui
+- pip install imutils
